@@ -227,12 +227,12 @@ Video playback inside a container normally runs on the CPU, because the containe
 
 > [!WARNING]
 >
-> This feature is **experimental and currently Qualcomm-only**. The container side driver targets the `msm_drm` kernel driver, and it has been validated on Snapdragon 865 (Adreno 640) only. On other SoCs the driver will not load and applications fall back to software decode.
+> This feature is **experimental and has only been validated on Snapdragon 865 (Adreno 640)**. Decoding itself is not Qualcomm specific: the host daemon asks MediaCodec for a decoder by MIME type, so a device uses whatever hardware decoder it ships with. What is tied to the test platform is the driver file name and one buffer alignment assumption, see [Porting to another SoC](#media-decode-porting) below.
 
 #### Requirements
 
 - The `decode-daemon` binary installed at `/data/local/Droidspaces/bin/decode-daemon` on the host.
-- The VA-API driver installed inside the container at `/usr/lib/aarch64-linux-gnu/dri/msm_drm_drv_video.so`.
+- The VA-API driver installed inside the container at `/usr/lib/aarch64-linux-gnu/dri/msm_drm_drv_video.so`. The name is not cosmetic, see the porting note.
 - **GPU Access** enabled, so `/dev/dri/renderD128` is present in the container. libva needs it to find the driver, and the browser paths need it to export frames.
 - Both components come from the [droidspaces-media-decode](https://github.com/Re-s/droidspaces-media-decode) project.
 
@@ -264,6 +264,18 @@ Video playback inside a container normally runs on the CPU, because the containe
    ```
 
    `-hwaccel_output_format vaapi` is required. Without it ffmpeg tries to convert to a software format and fails.
+
+<a id="media-decode-porting"></a>
+
+#### Porting to another SoC
+
+Only two things assume Qualcomm, and neither is in the decode path itself. Nobody has tested this outside Snapdragon 865, so treat the following as a starting point rather than a recipe.
+
+**The driver file name.** libva reads the kernel DRM driver name from `/dev/dri/renderD128` and builds the library name from it, so a Qualcomm device looks for `msm_drm_drv_video.so`. MediaTek reports `mediatek-drm` and Mali based devices report `panfrost`, which means the same driver binary has to be installed under the matching name. No code changes, just the file name.
+
+**The surface alignment.** The driver allocates frame buffers with the width aligned to 128 and the height to 32, which is what the Venus encoder block on Snapdragon does. Other vendors align differently. Getting this wrong affects only the dmabuf export path: Firefox needs `vaExportSurfaceHandle` and falls back to software decode without it, while the ffmpeg `hwdownload` path allocates from an ordinary heap and does not care.
+
+There is also a `vendor.qti-ext-dec-picture-order.enable` format key in the daemon. It is a Qualcomm vendor extension that fixes a frame lag problem, and platforms that do not recognise it ignore it, so it is safe to leave in place.
 
 > [!NOTE]
 >

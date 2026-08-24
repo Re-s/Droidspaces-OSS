@@ -228,12 +228,12 @@ Droidspaces 通过 PulseAudio 将 Android 的音频栈桥接到容器中。启�
 
 > [!WARNING]
 >
-> 本功能为**实验性，且目前仅支持高通平台**。容器侧驱动针对 `msm_drm` 内核驱动，仅在骁龙 865（Adreno 640）上验证过。在其他 SoC 上驱动不会被加载，应用将回落到软件解码。
+> 本功能为**实验性，且仅在骁龙 865（Adreno 640）上验证过**。解码本身并不依赖高通：宿主守护进程按 MIME 类型向 MediaCodec 申请解码器，设备用的就是自己出厂搭载的硬件解码器。与测试平台绑定的只有驱动文件名和一处缓冲对齐假设，详见下方[移植到其他 SoC](#media-decode-porting)。
 
 #### 要求
 
 - 宿主侧需在 `/data/local/Droidspaces/bin/decode-daemon` 安装 `decode-daemon` 二进制。
-- 容器内需在 `/usr/lib/aarch64-linux-gnu/dri/msm_drm_drv_video.so` 安装 VA-API 驱动。
+- 容器内需在 `/usr/lib/aarch64-linux-gnu/dri/msm_drm_drv_video.so` 安装 VA-API 驱动。这个文件名不是随意取的，见移植说明。
 - 需启用 **GPU 访问**，使容器内存在 `/dev/dri/renderD128`。libva 依赖它发现驱动，浏览器路径也依赖它导出帧。
 - 两个组件均来自 [droidspaces-media-decode](https://github.com/Re-s/droidspaces-media-decode) 项目。
 
@@ -265,6 +265,18 @@ Droidspaces 通过 PulseAudio 将 Android 的音频栈桥接到容器中。启�
    ```
 
    `-hwaccel_output_format vaapi` 是必需的。缺少它时 ffmpeg 会尝试转换为软件格式并报错。
+
+<a id="media-decode-porting"></a>
+
+#### 移植到其他 SoC
+
+只有两处假设了高通，且都不在解码路径上。骁龙 865 之外没有人测过，所以下面只是起点，不是操作手册。
+
+**驱动文件名。** libva 从 `/dev/dri/renderD128` 读取内核 DRM 驱动名，再据此拼出库文件名，所以高通设备会去找 `msm_drm_drv_video.so`。联发科上报 `mediatek-drm`，Mali 设备上报 `panfrost`，也就是说同一份驱动二进制换成对应的名字装上即可。代码无需改动，只是文件名。
+
+**surface 对齐。** 驱动分配帧缓冲时按宽 128、高 32 对齐，这是骁龙的 Venus 编解码模块的行为。其他厂商对齐要求不同。这一处只影响 dmabuf 导出路径：Firefox 需要 `vaExportSurfaceHandle`，拿不到就回落软解；而 ffmpeg 的 `hwdownload` 路径从普通 heap 分配，不受影响。
+
+守护进程里还有一个 `vendor.qti-ext-dec-picture-order.enable` 格式键。它是高通的 vendor 扩展，用来消除一处帧滞后问题，不认识这个键的平台会直接忽略，因此保留它是安全的。
 
 > [!NOTE]
 >
