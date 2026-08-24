@@ -182,6 +182,7 @@ fun ContainerCard(
                     if (container.enableTermuxX11) add(context.getString(R.string.x11_option))
                     if (container.enableVirgl) add(context.getString(R.string.virgl_option))
                     if (container.enablePulseaudio) add(context.getString(R.string.pulseaudio_option))
+                    if (container.enableMediaDecode) add(context.getString(R.string.media_decode_option))
                     if (container.selinuxPermissive) add(context.getString(R.string.selinux_permissive_option))
                     if (container.allowUserns) add(context.getString(R.string.userns_option))
                     if (container.volatileMode) add(context.getString(R.string.volatile_option))

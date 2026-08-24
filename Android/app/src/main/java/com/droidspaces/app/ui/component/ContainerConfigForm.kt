@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.GppMaybe
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Memory
+import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.NetworkCheck
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Public
@@ -486,6 +487,15 @@ fun ContainerConfigForm(
             description = context.getString(R.string.enable_pulseaudio_description),
             checked = state.enablePulseaudio,
             onCheckedChange = { clearFocus(); onStateChange(state.copy(enablePulseaudio = it)) },
+            enabled = true
+        )
+
+        ToggleCard(
+            icon = Icons.Filled.Movie,
+            title = context.getString(R.string.enable_media_decode),
+            description = context.getString(R.string.enable_media_decode_description),
+            checked = state.enableMediaDecode,
+            onCheckedChange = { clearFocus(); onStateChange(state.copy(enableMediaDecode = it)) },
             enabled = true
         )
 
