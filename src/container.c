@@ -435,6 +435,8 @@ int start_rootfs(struct ds_config *cfg) {
     ds_warn("--virgl-flags is only applicable on Android. Skipping.");
   if (cfg->pulseaudio && !is_android())
     ds_warn("--pulse-audio is only applicable on Android. Skipping.");
+  if (cfg->media_decode && !is_android())
+    ds_warn("--media-decode is only applicable on Android. Skipping.");
 
   /* If no hostname specified, default to container name */
   if (cfg->hostname[0] == '\0') {
@@ -513,6 +515,15 @@ int start_rootfs(struct ds_config *cfg) {
 
   if (is_android() && cfg->pulseaudio) {
     ds_pulse_daemon_start(cfg);
+  }
+
+  if (is_android() && cfg->media_decode) {
+    if (ds_decode_daemon_start(cfg) == 0) {
+      char sock[PATH_MAX];
+      snprintf(sock, sizeof(sock), "%s/%s/%s", get_workspace_dir(),
+               DS_DECODE_SUBDIR, DS_DECODE_SOCK_NAME);
+      wait_for_socket_or_death(cfg->decode_pid, sock, 3000, 50000);
+    }
   }
 
   /* 3. Early pre-flight for volatile mode (before any host changes) */

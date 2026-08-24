@@ -85,6 +85,10 @@ void ds_env_boot_setup(struct ds_config *cfg) {
     setenv("GALLIUM_DRIVER", "virpipe", 1);
   if (is_android() && cfg->pulseaudio)
     setenv("PULSE_SERVER", "unix:" DS_PULSE_SOCKET, 1);
+  /* The VA-API driver probes /run/dmd/decode.sock by default, so point it at
+   * the bridged path instead of patching the driver. */
+  if (is_android() && cfg->media_decode)
+    setenv("DMD_ENDPOINT", "unix:" DS_DECODE_SOCKET, 1);
 }
 
 void ds_env_save(const char *path, struct ds_config *cfg) {
@@ -120,6 +124,8 @@ void ds_env_save(const char *path, struct ds_config *cfg) {
     fprintf(f, "export GALLIUM_DRIVER='virpipe'\n");
   if (is_android() && cfg->pulseaudio)
     fprintf(f, "export PULSE_SERVER='unix:" DS_PULSE_SOCKET "'\n");
+  if (is_android() && cfg->media_decode)
+    fprintf(f, "export DMD_ENDPOINT='unix:" DS_DECODE_SOCKET "'\n");
 
   fclose(f);
   chmod(path, 0755);

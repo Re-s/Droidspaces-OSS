@@ -819,5 +819,8 @@ int setup_hardware_access(struct ds_config *cfg) {
   /* 4. Setup PulseAudio socket (Android only) */
   ds_setup_pulse_socket(cfg);
 
+  /* 5. Setup media decode socket (Android only) */
+  ds_setup_decode_socket(cfg);
+
   return 0;
 }

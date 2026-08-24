@@ -710,6 +710,15 @@ reboot_loop:;
       ds_pulse_daemon_start(cfg);
     }
 
+    if (is_android() && cfg->media_decode) {
+      if (ds_decode_daemon_start(cfg) == 0) {
+        char sock[PATH_MAX];
+        snprintf(sock, sizeof(sock), "%s/%s/%s", get_workspace_dir(),
+                 DS_DECODE_SUBDIR, DS_DECODE_SOCK_NAME);
+        wait_for_socket_or_death(cfg->decode_pid, sock, 3000, 50000);
+      }
+    }
+
     /* Refresh ns_inode: new container has a new PID namespace inode.
      * Without this, ds_virtualize_update's PID-recycling guard rejects
      * all writes after the first reboot cycle (stale inode != new pid ns). */

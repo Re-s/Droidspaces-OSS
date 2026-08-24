@@ -879,3 +879,6 @@ int check_virgl_needs(void) {
 int check_pulse_needs(void) {
   return ds_feature_needs(offsetof(struct ds_config, pulseaudio));
 }
+int check_decode_needs(void) {
+  return ds_feature_needs(offsetof(struct ds_config, media_decode));
+}

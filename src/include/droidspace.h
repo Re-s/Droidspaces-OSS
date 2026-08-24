@@ -151,6 +151,15 @@
 #define TX11_PACTL_BIN TX11_PREFIX "/bin/pactl"
 #define TX11_PULSE_DEFAULT_SINK "AAudio_sink"
 
+/* Media decode paths (Android only).  The host socket lives in the workspace so
+ * it follows the Android and Linux root switch; the container sees it bridged
+ * into /tmp alongside the other helper sockets. */
+#define DS_DECODE_SOCKET "/tmp/.decode-socket"
+#define DS_DECODE_SUBDIR "Decode"
+#define DS_DECODE_SOCK_NAME "decode.sock"
+#define DS_DECODE_BIN DS_WORKSPACE_ANDROID "/bin/decode-daemon"
+#define DS_OLDROOT_PREFIX "/.old_root"
+
 /* File Extensions */
 #define DS_EXT_PID ".pid"
 #define DS_EXT_XPID ".xpid"
@@ -355,6 +364,7 @@ struct ds_config {
   int virgl;              /* --virgl (Android only) */
   char *virgl_extra_flags; /* --virgl-flags "..." (heap, NULL if unset) */
   int pulseaudio;          /* --pulse-audio (Android only) */
+  int media_decode;        /* --media-decode (Android only) */
   int volatile_mode;       /* --volatile */
   int disable_ipv6;        /* --disable-ipv6 */
   int android_storage;     /* --enable-android-storage */
@@ -376,6 +386,7 @@ struct ds_config {
   pid_t x11_pid;                  /* PID of the Termux-X11 server process */
   pid_t virgl_pid;                /* PID of the VirGL server process */
   pid_t pulse_pid;                /* PID of the PulseAudio daemon process */
+  pid_t decode_pid;               /* PID of the media decode daemon process */
   int is_img_mount;               /* 1 if rootfs was loop-mounted from .img */
   char img_mount_point[PATH_MAX]; /* where the .img was mounted */
   ds_init_type_t init_type;       /* detected container PID 1 init family */
@@ -667,6 +678,12 @@ int ds_pulse_daemon_start(struct ds_config *cfg);
 void ds_pulse_daemon_stop(struct ds_config *cfg);
 int ds_setup_pulse_socket(struct ds_config *cfg);
 
+/* mediadecode.c */
+
+int ds_decode_daemon_start(struct ds_config *cfg);
+void ds_decode_daemon_stop(struct ds_config *cfg);
+int ds_setup_decode_socket(struct ds_config *cfg);
+
 /* network.c */
 
 int fix_networking_host(struct ds_config *cfg);
@@ -835,6 +852,7 @@ int check_selinux_permissive_needs(void);
 int check_x11_needs(void);
 int check_virgl_needs(void);
 int check_pulse_needs(void);
+int check_decode_needs(void);
 
 /*
  * ds_feature_needs - generic feature-needs scanner.
