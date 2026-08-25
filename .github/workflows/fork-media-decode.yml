@@ -1,0 +1,161 @@
+name: fork media-decode test
+
+# Fork-only workflow for validating the media-decode bridge changes.
+#
+# The upstream ci.yml builds all five architectures plus the Android app, which
+# is far more than this needs. This builds aarch64 only, which is the one
+# architecture the decode bridge runs on, and asserts the specific invariants
+# the bridge depends on so a regression fails here instead of on a tablet.
+#
+# Deliberately not wired to pull_request: this branch is not meant to open a PR
+# against upstream.
+on:
+  push:
+    branches: [ 'feat/media-decode-bridge' ]
+    tags: [ 'fork-v*' ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: aarch64 backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends build-essential wget zstd
+
+      - name: Fetch the aarch64 musl toolchain
+        run: |
+          mkdir -p "$HOME/toolchains"
+          cd "$HOME/toolchains"
+          # Same pinned toolchain release the upstream CI uses.
+          BASE_URL="https://github.com/ravindu644/Droidspaces-OSS/releases/download/compilers-25843896720"
+          wget -q "$BASE_URL/aarch64-linux-musl-cross.tar.zst"
+          tar -xf aarch64-linux-musl-cross.tar.zst
+          "$HOME/toolchains/aarch64-linux-musl-cross/bin/aarch64-linux-musl-gcc" --version | head -1
+
+      - name: Check formatting
+        run: |
+          # CI does not enforce this upstream, so catch it here rather than in review.
+          if ! command -v clang-format >/dev/null; then
+            sudo apt-get install -y --no-install-recommends clang-format
+          fi
+          make format
+          if ! git diff --quiet; then
+            echo "::error::make format produced changes, commit them"
+            git diff --stat
+            exit 1
+          fi
+
+      - name: Build
+        run: |
+          make aarch64 CC="$HOME/toolchains/aarch64-linux-musl-cross/bin/aarch64-linux-musl-gcc"
+
+      - name: Verify the binary
+        run: |
+          file output/droidspaces
+          file output/droidspaces | grep -q 'ARM aarch64' || {
+            echo "::error::not an aarch64 binary"; exit 1; }
+          file output/droidspaces | grep -q 'statically linked' || {
+            echo "::error::expected a static binary"; exit 1; }
+
+      # These are the invariants the three media-decode fixes rest on. Asserting
+      # them here means a later refactor that quietly undoes one gets caught.
+      - name: Assert media-decode invariants
+        run: |
+          fail=0
+
+          check_string() {
+            if strings output/droidspaces | grep -qF "$1"; then
+              echo "ok: $2"
+            else
+              echo "::error::missing $2 (expected string: $1)"
+              fail=1
+            fi
+          }
+
+          # The container mount point has to match the driver's default probe
+          # path, otherwise consumers silently fall back to TCP.
+          check_string '/run/dmd/decode.sock' 'decode socket path aligned with the driver default'
+
+          # The bridge mounts the directory, not the socket file. A file mount
+          # dies the first time the daemon recreates its socket.
+          check_string 'socket dir bind-mounted into container' 'directory bind mount'
+
+          # A duplicate daemon must be allowed to stand down on its own.
+          check_string 'already owns' 'daemon self-arbitration path'
+
+          # Five hwservicemanager rules gate every HAL lookup. Without them the
+          # daemon aborts in Codec2Client::GetServiceNames.
+          for carrier in \
+            Android/app/src/main/assets/boot-module/sepolicy.rule \
+            init/android-service/binary-configuration/droidspaces_binary.cil
+          do
+            n=$(grep -c hwservicemanager "$carrier" || true)
+            if [ "$n" -ge 5 ]; then
+              echo "ok: $carrier carries $n hwservicemanager rules"
+            else
+              echo "::error::$carrier has $n hwservicemanager rules, expected at least 5"
+              fail=1
+            fi
+          done
+
+          # Unlinking the lock file lets a second flock succeed on a fresh inode,
+          # which is how two daemons end up serving one socket.
+          if grep -nE 'unlink\(lock' src/android/mediadecode.c; then
+            echo "::error::mediadecode.c unlinks the lock file, that breaks flock arbitration"
+            fail=1
+          else
+            echo "ok: lock file is left alone"
+          fi
+
+          exit $fail
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: droidspaces-aarch64
+          path: output/droidspaces
+          if-no-files-found: error
+
+  release:
+    name: Test release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/fork-v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        run: |
+          cd dist
+          ls -la
+          sha256sum droidspaces > SHA256SUMS
+          cat SHA256SUMS
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/droidspaces
+            dist/SHA256SUMS
+          fail_on_unmatched_files: true
+          prerelease: true
+          name: "Fork test build ${{ github.ref_name }}"
+          body: |
+            Fork test build of the media-decode bridge. Not an upstream release.
+
+            aarch64 backend only. Verified on Snapdragon 865, Android 13,
+            SELinux Enforcing: HEVC decode is byte for byte identical to the
+            software baseline with no `DMD_ENDPOINT` set, survives a daemon
+            restart that changes the socket inode, and a duplicate daemon
+            stands down on its own.
