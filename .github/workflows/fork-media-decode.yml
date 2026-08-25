@@ -40,17 +40,24 @@ jobs:
           tar -xf aarch64-linux-musl-cross.tar.zst
           "$HOME/toolchains/aarch64-linux-musl-cross/bin/aarch64-linux-musl-gcc" --version | head -1
 
-      - name: Check formatting
+      # Advisory only. clang-format output differs across major versions, so
+      # gating on it just means the runner's version has to match whatever the
+      # last committer had installed. Upstream deliberately leaves formatting to
+      # the author for the same reason.
+      - name: Formatting (advisory)
+        continue-on-error: true
         run: |
-          # CI does not enforce this upstream, so catch it here rather than in review.
           if ! command -v clang-format >/dev/null; then
             sudo apt-get install -y --no-install-recommends clang-format
           fi
+          clang-format --version
           make format
-          if ! git diff --quiet; then
-            echo "::error::make format produced changes, commit them"
+          if git diff --quiet; then
+            echo "formatting matches this runner's clang-format"
+          else
+            echo "::notice::clang-format $(clang-format --version | grep -oE '[0-9]+' | head -1) would reformat these files"
             git diff --stat
-            exit 1
+            git checkout -- .
           fi
 
       - name: Build
