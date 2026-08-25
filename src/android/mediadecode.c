@@ -97,31 +97,41 @@ int ds_decode_daemon_start(struct ds_config *cfg) {
     return -1;
   }
 
-  /* Reuse existing global daemon if still alive */
-  pid_t existing = ds_daemon_read_pid("mediadecode.dpid");
-  if (existing > 0) {
-    ds_log("MediaDecode: daemon already running (PID %d)", (int)existing);
-    cfg->decode_pid = existing;
-    return 1;
-  }
-
+  /* Let the daemon arbitrate, do not guess from a PID file.
+   *
+   * A PID file cannot answer "is my daemon running": the number gets recycled,
+   * so a dead daemon's PID can match some unrelated live process and we skip a
+   * start that was needed.  The daemon already holds an flock on
+   * <socket>.lock for its whole lifetime, and the kernel releases that even on
+   * SIGKILL, so a second instance exits by itself with a clear message.  Spawn
+   * unconditionally and let the loser stand down.
+   *
+   * Never unlink the lock file here.  Removing it while an instance holds it
+   * makes the next flock succeed on a fresh inode, which is how two daemons end
+   * up serving one socket path.  The socket file is the daemon's to clean: it
+   * only removes a stale one after winning the lock. */
   const char *dir = decode_sock_dir();
   if (mkdir_p(dir, 0755) < 0) {
     ds_warn("MediaDecode: cannot create %s: %s", dir, strerror(errno));
     return -1;
   }
 
-  /* Clear leftovers from a crashed run. The daemon refuses to start while its
-   * lock file looks held, and a stale socket inode would break the bridge. */
-  unlink(decode_sock_path());
-  char lock[PATH_MAX];
-  snprintf(lock, sizeof(lock), "%s.lock", decode_sock_path());
-  unlink(lock);
-
   ds_log("[MediaDecode] launching daemon (uid=%d)", (int)getuid());
   pid_t child = spawn_decode(dir);
   if (child <= 0)
     return -1;
+
+  /* A duplicate exits during startup, so a short wait tells the two apart.
+   * Either way the socket ends up served, by us or by the instance that was
+   * already there, so neither outcome is a failure. */
+  int status = 0;
+  usleep(400000);
+  if (waitpid(child, &status, WNOHANG) == child) {
+    ds_log("MediaDecode: another instance already owns %s, keeping it",
+           decode_sock_path());
+    cfg->decode_pid = 0;
+    return 1;
+  }
 
   cfg->decode_pid = child;
   ds_daemon_write_pid("mediadecode.dpid", child);
