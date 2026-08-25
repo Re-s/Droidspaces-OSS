@@ -54,9 +54,22 @@
 ; Allow the media service domains to hand binder handles to droidspacesd, which
 ; MediaCodec hardware video decode needs.
 ; A permissive droidspacesd is not enough: binder transfer is checked against
-; the sender, and these domains are enforcing. Without this, getService returns
-; EX_TRANSACTION_FAILED, the codec client cannot obtain IOmx, and it aborts on
-; the Codec2 fallback path.
+; the sender, and these domains are enforcing.
+;
+; hwservicemanager comes first because it gates every other lookup. The codec
+; client resolves android.hidl.manager@1.2::IServiceManager before it can reach
+; any HAL, and without these rules that call returns EX_TRANSACTION_FAILED.
+; Codec2Client then aborts with "Check failed: serviceManager Hardware service
+; manager is not running", which reads like a missing IOmx but is really a
+; missing service manager. Media codecs travel over hwbinder, so the
+; servicemanager rules earlier in this file do not help, those cover system
+; binder only. That asymmetry is why PulseAudio worked while decode aborted.
+(allow hwservicemanager droidspacesd (binder (call transfer)))
+(allow hwservicemanager droidspacesd (fd (use)))
+(allow hwservicemanager droidspacesd (dir (search)))
+(allow hwservicemanager droidspacesd (file (getattr open read)))
+(allow hwservicemanager droidspacesd (process (getattr)))
+
 (allow mediacodec droidspacesd (binder (call transfer)))
 (allow mediacodec droidspacesd (fd (use)))
 (allow mediametrics droidspacesd (binder (call transfer)))

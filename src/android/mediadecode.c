@@ -143,25 +143,37 @@ int ds_setup_decode_socket(struct ds_config *cfg) {
     return 0;
 
   /* Post-pivot_root the host workspace is reachable under /.old_root, so build
-   * the source path from there rather than from the live workspace helper. */
+   * the source path from there rather than from the live workspace helper.
+   * Bridge the directory, not the socket file: the daemon unlinks and recreates
+   * decode.sock on restart, and a bind mount follows the inode, so a file mount
+   * would go dead the first time the daemon restarts. */
   char src[PATH_MAX];
-  snprintf(src, sizeof(src), "%s%s/%s/%s", DS_OLDROOT_PREFIX,
-           DS_WORKSPACE_ANDROID, DS_DECODE_SUBDIR, DS_DECODE_SOCK_NAME);
+  snprintf(src, sizeof(src), "%s%s/%s", DS_OLDROOT_PREFIX, DS_WORKSPACE_ANDROID,
+           DS_DECODE_SUBDIR);
 
   struct stat st;
   if (stat(src, &st) != 0) {
-    ds_warn("MediaDecode: socket not found at %s - skipping socket bridge",
+    ds_warn("MediaDecode: socket dir not found at %s - skipping socket bridge",
             src);
     return 0;
   }
 
-  if (ds_bind_mount_socket(src, DS_DECODE_SOCKET, st.st_uid, "MediaDecode") < 0)
+  if (mkdir_p(DS_DECODE_DIR, 0755) < 0) {
+    ds_warn("MediaDecode: cannot create %s: %s", DS_DECODE_DIR,
+            strerror(errno));
     return 0;
+  }
 
-  ds_log("MediaDecode: socket bind-mounted into container");
+  if (mount(src, DS_DECODE_DIR, NULL, MS_BIND, NULL) != 0) {
+    ds_warn("MediaDecode: failed to bind-mount socket dir: %s",
+            strerror(errno));
+    return 0;
+  }
 
-  /* The VA-API driver probes /run/dmd/decode.sock by default, so point it at
-   * our path explicitly instead of patching the driver. */
+  ds_log("MediaDecode: socket dir bind-mounted into container");
+
+  /* DS_DECODE_DIR already matches the driver's default probe path, so this only
+   * pins it for consumers that would otherwise probe something else. */
   setenv("DMD_ENDPOINT", "unix:" DS_DECODE_SOCKET, 1);
   return 0;
 }

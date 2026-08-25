@@ -224,7 +224,9 @@ Droidspaces 通过 PulseAudio 将 Android 的音频栈桥接到容器中。启�
 
 ## Android 视频硬件解码
 
-容器内的视频播放通常只能用 CPU 解码，因为容器无法访问 Android 的媒体栈。本功能打通了这条路径：宿主侧的一个小型守护进程通过 UNIX socket 暴露 Android 的 MediaCodec 解码器，该 socket 被 bind mount 到容器的 `/tmp/.decode-socket`，容器内的 VA-API 驱动再连接它。`DMD_ENDPOINT=unix:/tmp/.decode-socket` 会自动注入，因此 ffmpeg、Firefox 与 Chrome 都能通过各自常规的 VA-API 路径获得硬件解码，无需逐个应用配置。
+容器内的视频播放通常只能用 CPU 解码，因为容器无法访问 Android 的媒体栈。本功能打通了这条路径：宿主侧的一个小型守护进程通过 UNIX socket 暴露 Android 的 MediaCodec 解码器，存放该 socket 的**目录**被 bind mount 到容器的 `/run/dmd`，容器内的 VA-API 驱动再连接 `/run/dmd/decode.sock`。这正是驱动自带的默认探测路径，因此不设任何环境变量也能拿到硬解；`DMD_ENDPOINT=unix:/run/dmd/decode.sock` 仍会注入，用于钉住那些会去探测别处的消费者。ffmpeg、Firefox 与 Chrome 都能通过各自常规的 VA-API 路径获得硬件解码，无需逐个应用配置。
+
+之所以桥接目录而不是 socket 文件本身：bind mount 跟随的是 inode，而 daemon 每次重启都会 unlink 并重建 socket，挂文件的话 daemon 一重启挂载点就成了死 inode。
 
 > [!WARNING]
 >

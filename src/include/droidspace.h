@@ -152,11 +152,19 @@
 #define TX11_PULSE_DEFAULT_SINK "AAudio_sink"
 
 /* Media decode paths (Android only).  The host socket lives in the workspace so
- * it follows the Android and Linux root switch; the container sees it bridged
- * into /tmp alongside the other helper sockets. */
-#define DS_DECODE_SOCKET "/tmp/.decode-socket"
-#define DS_DECODE_SUBDIR "Decode"
+ * it follows the Android and Linux root switch.
+ *
+ * The container gets the whole directory, not the socket file.  A bind mount
+ * binds an inode, and the daemon unlinks and recreates its socket every
+ * restart, so mounting the file leaves the container holding a dead inode as
+ * soon as the daemon restarts once.  Mounting the directory survives that.
+ *
+ * DS_DECODE_DIR matches the VA-API driver's built-in default probe path, so an
+ * unmodified consumer finds the socket with no DMD_ENDPOINT set at all. */
 #define DS_DECODE_SOCK_NAME "decode.sock"
+#define DS_DECODE_DIR "/run/dmd"
+#define DS_DECODE_SOCKET DS_DECODE_DIR "/" DS_DECODE_SOCK_NAME
+#define DS_DECODE_SUBDIR "Decode"
 #define DS_DECODE_BIN DS_WORKSPACE_ANDROID "/bin/decode-daemon"
 #define DS_OLDROOT_PREFIX "/.old_root"
 

@@ -223,7 +223,9 @@ Droidspaces bridges Android's audio stack into your container using PulseAudio. 
 
 ## Android Hardware Video Decode
 
-Video playback inside a container normally runs on the CPU, because the container has no path to Android's media stack. This feature opens that path: a small host daemon exposes Android's MediaCodec decoders over a UNIX socket, the socket is bind-mounted into the container at `/tmp/.decode-socket`, and a VA-API driver inside the container dials it. `DMD_ENDPOINT=unix:/tmp/.decode-socket` is injected automatically, so ffmpeg, Firefox and Chrome pick up hardware decode through their normal VA-API path with no per application configuration.
+Video playback inside a container normally runs on the CPU, because the container has no path to Android's media stack. This feature opens that path: a small host daemon exposes Android's MediaCodec decoders over a UNIX socket, the directory holding that socket is bind-mounted into the container at `/run/dmd`, and a VA-API driver inside the container dials `/run/dmd/decode.sock`. That is the driver's own default probe path, so hardware decode works with no environment set at all. `DMD_ENDPOINT=unix:/run/dmd/decode.sock` is still injected, which pins the endpoint for consumers that would otherwise probe elsewhere. ffmpeg, Firefox and Chrome pick it up through their normal VA-API path with no per application configuration.
+
+The directory is bridged rather than the socket file itself, because a bind mount follows an inode. The daemon unlinks and recreates its socket on restart, so a file mount would go dead the first time the daemon restarted.
 
 > [!WARNING]
 >
